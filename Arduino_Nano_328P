@@ -1,0 +1,141 @@
+#include <avr/sleep.h>
+#include <avr/power.h>
+
+
+const int counterPin = 6; //Input from counter (looking for HIGH as external pulldown resistor is used)
+const int interruptPin = 2;
+const int ledPin = 13;    //Debugging tool providing visual indicator as to when a pulse is detected
+
+int counterState = 0;       //current count button state
+int counterStatePrv = 0;    //previous count button state
+int sleepNumber;
+
+unsigned long lastDebounceTime = 0;       //Last time output was toggled - Count
+unsigned long debounceDelay = 10;     //Debounce time on the input button
+unsigned long g_sleepDelay = 5000;     //Time with no pulses before sleep
+
+unsigned long countNumber;      //unsigned 32bit variable
+
+
+/***************************************************/
+void setup()
+{
+  Serial.begin(115200);
+
+  //Sets OUTPUT pins
+  pinMode(ledPin, OUTPUT);
+  
+  /* Setup the pin direction. */
+  pinMode(counterPin, INPUT_PULLUP);
+  pinMode(interruptPin, INPUT_PULLUP);  
+  
+  Serial.println("Initialisation complete.");
+  //attachInterrupt(digitalPinToInterrupt(interruptPin), sleepInterrupt, FALLING);
+  
+  delay(100);
+  
+}
+
+/***************************************************/
+void loop()
+{
+   digitalWrite(ledPin, HIGH);   //Turn onboard LED ON  
+   counterState = digitalRead(counterPin);   //Read the status of the counter input
+    
+  if (counterState != counterStatePrv) // If the switch changed, due to noise or pressing
+    {
+
+      if ((millis() - lastDebounceTime) > debounceDelay) 
+      {
+
+        lastDebounceTime = millis();    //set debounce time to be the clock time
+
+        if (counterState == LOW)          //check for pulse
+        {
+
+          //digitalWrite(ledPin, HIGH);   //Turn onboard LED ON
+
+          countNumber++;      //increment (add 1) to the stored count value
+
+          Serial.println(countNumber);
+
+          //Call a void loop responsible for memory allocation of o/p
+          //splitCountValue();
+
+          //Call a void loop responsible for printing the o/p
+          //printCountValue();
+
+        }
+        
+      }
+      
+      else 
+      { 
+        digitalWrite(ledPin, LOW); 
+      }
+      
+    }
+
+    counterStatePrv = counterState;
+
+   if ((millis() - lastDebounceTime) > g_sleepDelay) 
+    {
+      Serial.println("getting tired!");
+      digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
+      sleepLoop();
+    }
+  
+}
+
+
+/***************************************************/
+void sleepLoop()
+{
+  attachInterrupt(digitalPinToInterrupt(interruptPin), sleepInterrupt, LOW);
+  enterSleep();      
+}
+
+
+/***************************************************/
+void enterSleep(void)
+{
+  
+  //Setup pin2 as an interrupt and attach handler. 
+  //attachInterrupt(digitalPinToInterrupt(pin2), pin2Interrupt, RISING);
+  Serial.println("Getting sleepy");
+  digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
+  sleepNumber++;
+  Serial.print("Sleep number: ");
+  Serial.println(sleepNumber);
+
+  delay(100);
+
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  
+  sleep_enable();
+  
+  sleep_mode();
+  
+  //The program will continue from here.
+  
+  //First thing to do is disable sleep.
+  sleep_disable(); 
+
+}
+
+
+/***************************************************/
+void sleepInterrupt(void)
+{
+  /* This will bring us back from sleep. */
+  
+  /* We detach the interrupt to stop it from 
+   * continuously firing while the interrupt pin
+   * is low.*/
+  sleep_disable(); 
+  detachInterrupt(0);
+  detachInterrupt(digitalPinToInterrupt(interruptPin));
+  Serial.println("Interrupt triggered");
+  digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
+  //noInterrupts();
+}
