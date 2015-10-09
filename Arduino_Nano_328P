@@ -2,13 +2,17 @@
 #include <avr/power.h>
 
 
-const int counterPin = 6; //Input from counter (looking for HIGH as external pulldown resistor is used)
-const int interruptPin = 2;
+//Pin Mapping
+const int countInputPin = 6;     //Input signal from sensor (looking for LOW as internal pullup resistor is used)
+const int countInterruptPin = 2;   //Input signal from sensor to wake up counter if in sleep mode (looking for LOW as internal pullup resistor is used)
+const int shareInterruptPin = 3;  //Signal to send counter into 'share' mode
 const int ledPin = 13;    //Debugging tool providing visual indicator as to when a pulse is detected
 
+//Global variables
 int counterState = 0;       //current count button state
 int counterStatePrv = 0;    //previous count button state
 int sleepNumber;
+int g_shareMode = 0;
 
 unsigned long lastDebounceTime = 0;       //Last time output was toggled - Count
 unsigned long debounceDelay = 10;     //Debounce time on the input button
@@ -20,17 +24,19 @@ unsigned long countNumber;      //unsigned 32bit variable
 /***************************************************/
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   //Sets OUTPUT pins
   pinMode(ledPin, OUTPUT);
   
   /* Setup the pin direction. */
-  pinMode(counterPin, INPUT_PULLUP);
-  pinMode(interruptPin, INPUT_PULLUP);  
+  pinMode(countInputPin, INPUT_PULLUP);
+  pinMode(countInterruptPin, INPUT_PULLUP);
+  pinMode(shareInterruptPin, INPUT_PULLUP);  
   
   Serial.println("Initialisation complete.");
   //attachInterrupt(digitalPinToInterrupt(interruptPin), sleepInterrupt, FALLING);
+  attachInterrupt(digitalPinToInterrupt(shareInterruptPin), shareInterrupt, LOW);
   
   delay(100);
   
@@ -39,8 +45,12 @@ void setup()
 /***************************************************/
 void loop()
 {
-   digitalWrite(ledPin, HIGH);   //Turn onboard LED ON  
-   counterState = digitalRead(counterPin);   //Read the status of the counter input
+   //digitalWrite(ledPin, HIGH);   //Turn onboard LED ON  
+  
+    attachInterrupt(digitalPinToInterrupt(shareInterruptPin), shareInterrupt, FALLING);
+
+  //////////COUNTER LOGIC//////////
+   counterState = digitalRead(countInputPin);   //Read the status of the counter input
     
   if (counterState != counterStatePrv) // If the switch changed, due to noise or pressing
     {
@@ -57,7 +67,7 @@ void loop()
 
           countNumber++;      //increment (add 1) to the stored count value
 
-          Serial.println(countNumber);
+          //Serial.println(countNumber);
 
           //Call a void loop responsible for memory allocation of o/p
           //splitCountValue();
@@ -78,20 +88,44 @@ void loop()
 
     counterStatePrv = counterState;
 
-   if ((millis() - lastDebounceTime) > g_sleepDelay) 
+  //////////SLEEP LOGIC//////////
+ if ((millis() - lastDebounceTime) > g_sleepDelay) 
     {
-      Serial.println("getting tired!");
-      digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
+      //Serial.println("getting tired!");
+      //digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
       sleepLoop();
     }
-  
+
+  //////////SHARE LOGIC//////////
+  if (g_shareMode == 1)
+  {
+    delay(1000);
+    Serial.println(countNumber);
+    g_shareMode = 0;
+  }
+
 }
 
 
 /***************************************************/
+void shareInterrupt(void)
+{
+  sleep_disable(); 
+  detachInterrupt(digitalPinToInterrupt(shareInterruptPin));
+  //shareData();
+  g_shareMode = 1;
+}
+
+void shareData()
+{
+  Serial.println("Share Interrupt triggered");
+  Serial.println(countNumber);
+  Serial.println();
+}
+/***************************************************/
 void sleepLoop()
 {
-  attachInterrupt(digitalPinToInterrupt(interruptPin), sleepInterrupt, LOW);
+  attachInterrupt(digitalPinToInterrupt(countInterruptPin), sleepInterrupt, LOW);
   enterSleep();      
 }
 
@@ -102,8 +136,8 @@ void enterSleep(void)
   
   //Setup pin2 as an interrupt and attach handler. 
   //attachInterrupt(digitalPinToInterrupt(pin2), pin2Interrupt, RISING);
-  Serial.println("Getting sleepy");
-  digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
+  //Serial.println("Getting sleepy");
+  //digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
   sleepNumber++;
   Serial.print("Sleep number: ");
   Serial.println(sleepNumber);
@@ -133,9 +167,9 @@ void sleepInterrupt(void)
    * continuously firing while the interrupt pin
    * is low.*/
   sleep_disable(); 
-  detachInterrupt(0);
-  detachInterrupt(digitalPinToInterrupt(interruptPin));
+  //detachInterrupt(0);
+  detachInterrupt(digitalPinToInterrupt(countInterruptPin));
   Serial.println("Interrupt triggered");
-  digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
+  //digitalWrite(ledPin, LOW);   //Turn onboard LED OFF
   //noInterrupts();
 }
