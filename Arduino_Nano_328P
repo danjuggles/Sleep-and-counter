@@ -1,5 +1,6 @@
 #include <avr/sleep.h>
 #include <avr/power.h>
+#include <EEPROM.h>
 
 
 //Pin Mapping
@@ -12,10 +13,11 @@ int counterState = 0;       //current count button state
 int counterStatePrv = 0;    //previous count button state
 int sleepNumber;
 int sleepYN = 1;
+long storedValue;  
 
 unsigned long lastDebounceTime = 0;       //Last time output was toggled - Count
-unsigned long debounceDelay = 10;     //Debounce time on the input button
-unsigned long g_sleepDelay = 5000;     //Time with no pulses before sleep
+unsigned long debounceDelay = 1.25;     //Debounce time on the input button (10ms, scaled down due to slower clock speed)
+unsigned long g_sleepDelay = 625;     //Time with no pulses before sleep (5s, scaled down due to slower clock speed)
 
 unsigned long countNumber;      //unsigned 32bit variable
 
@@ -24,98 +26,114 @@ unsigned long countNumber;      //unsigned 32bit variable
 void setup()
 {
   noInterrupts();
-  
-  Serial.begin(9600);
+
+  Serial.begin(38400);    //Use Baud rate at 4800 on PC (due to 1MHz clock speed)
 
   /* Setup the pin direction. */
-for (byte i = 0; i <= A5; i++)
-    {
+  for (byte i = 0; i <= A5; i++)
+  {
     pinMode (i, OUTPUT);    // changed as per below
     digitalWrite (i, LOW);  //     ditto
-    }
+  }
 
-pinMode(countInterruptPin, INPUT_PULLUP);
+  pinMode(countInterruptPin, INPUT_PULLUP);
+
+  clock_prescale_set (clock_div_8);
 
   // disable ADC
   ADCSRA = 0;
 
   // turn off various modules (must come after disable ADC)
-power_adc_disable(); // ADC converter
-power_spi_disable(); // SPI
-power_usart0_enable();// Serial (USART) 
-power_timer0_enable();// Timer 0
-power_timer1_disable();// Timer 1
-power_timer2_disable();// Timer 2
-power_twi_disable(); // TWI (I2C)  
+  power_adc_disable(); // ADC converter
+  power_spi_disable(); // SPI
+  power_usart0_enable();// Serial (USART)
+  power_timer0_enable();// Timer 0
+  power_timer1_disable();// Timer 1
+  power_timer2_disable();// Timer 2
+  power_twi_disable(); // TWI (I2C)
 
- // turn off brown-out enable in software
+  // turn off brown-out enable in software
   MCUCR = bit (BODS) | bit (BODSE);  // turn on brown-out enable select
   MCUCR = bit (BODS);        // this must be done within 4 clock cycles of above
-  
+
+ //Read the stored EEPROM value
+  countNumber = EEPROMReadLong(0);
+
   Serial.println("Initialisation complete.");
-  
+
   //delay(100);
-  
+
   interrupts();
 }
 
 /***************************************************/
 void loop()
 {
-   //digitalWrite(ledPin, HIGH);   //Turn onboard LED ON
+  //digitalWrite(ledPin, HIGH);   //Turn onboard LED ON
 
 
-   //////////COUNTER LOGIC//////////
-   
+    /////////////////EEPROM update logic/////////////////////
+    long address = 0;   //Sets the EEPROM start address, must be in main loop
+    storedValue = EEPROMReadLong(0);
+    if (countNumber >= (storedValue + 10)) 
+    {
+      EEPROMWriteLong(address, countNumber);
+      address += 4;
+      Serial.print("EEPROM: ");
+      Serial.println(storedValue);
+    }
+    
+  //////////COUNTER LOGIC//////////
+
   counterState = digitalRead(countInterruptPin);   //Read the status of the counter input
 
   if (counterState != counterStatePrv) // If the switch changed, due to noise or pressing
+  {
+
+    if ((millis() - lastDebounceTime) > debounceDelay)
     {
-   
-      if ((millis() - lastDebounceTime) > debounceDelay) 
+
+      lastDebounceTime = millis();    //set debounce time to be the clock time
+
+      if (counterState == LOW)          //check for pulse
       {
 
-        lastDebounceTime = millis();    //set debounce time to be the clock time
+        //digitalWrite(ledPin, HIGH);   //Turn onboard LED ON
 
-        if (counterState == LOW)          //check for pulse
-        {
+        countNumber++;      //increment (add 1) to the stored count value
 
-          //digitalWrite(ledPin, HIGH);   //Turn onboard LED ON
+        sleepYN = 1;
 
-          countNumber++;      //increment (add 1) to the stored count value
+        Serial.println(countNumber);
 
-          sleepYN = 1;
-          
-          Serial.println(countNumber);
+        //Call a void loop responsible for memory allocation of o/p
+        //splitCountValue();
 
-          //Call a void loop responsible for memory allocation of o/p
-          //splitCountValue();
+        //Call a void loop responsible for printing the o/p
+        //printCountValue();
 
-          //Call a void loop responsible for printing the o/p
-          //printCountValue();
-
-        }
-        
       }
-      
-      else 
-      { 
-        //digitalWrite(ledPin, LOW); 
-      }
-      
+
     }
 
-    counterStatePrv = counterState;
-    
-  //////////SLEEP LOGIC//////////
- if (((millis() - lastDebounceTime) > g_sleepDelay) && (sleepYN==1))
+    else
     {
-       if (counterState == counterStatePrv) // If the switch changed, due to noise or pressing
-       {
-        sleepYN = 0;
-        sleepLoop();
-       }
+      //digitalWrite(ledPin, LOW);
     }
+
+  }
+
+  counterStatePrv = counterState;
+
+  //////////SLEEP LOGIC//////////
+  if (((millis() - lastDebounceTime) > g_sleepDelay) && (sleepYN == 1))
+  {
+    if (counterState == counterStatePrv) // If the switch changed, due to noise or pressing
+    {
+      sleepYN = 0;
+      sleepLoop();
+    }
+  }
 
 
 }
@@ -137,18 +155,50 @@ void sleepLoop()
   //sleep_mode();
   interrupts();
   sleep_cpu();
-  
+
   //The program will continue from here.
-  
+
   //First thing to do is disable sleep.
-  sleep_disable(); 
+  sleep_disable();
 }
 
 /***************************************************/
 void sleepInterrupt(void)
 {
-  sleep_disable(); 
+  sleep_disable();
   detachInterrupt(0);
   detachInterrupt(digitalPinToInterrupt(countInterruptPin));
   //Serial.println("Interrupt triggered");
+}
+
+//This function will write a 4 byte (32bit) long to the eeprom at
+//the specified address to adress + 3.
+void EEPROMWriteLong(int address, long value)
+{
+  //Decomposition from a long to 4 bytes by using bitshift.
+  //One = Most significant -> Four = Least significant byte
+  byte four = (value & 0xFF);
+  byte three = ((value >> 8) & 0xFF);
+  byte two = ((value >> 16) & 0xFF);
+  byte one = ((value >> 24) & 0xFF);
+
+  //Write the 4 bytes into the eeprom memory.
+  EEPROM.write(address, four);
+  EEPROM.write(address + 1, three);
+  EEPROM.write(address + 2, two);
+  EEPROM.write(address + 3, one);
+}
+
+//This function will return a 4 byte (32bit) long from the eeprom
+//at the specified address to adress + 3.
+long EEPROMReadLong(long address)
+{
+  //Read the 4 bytes from the eeprom memory.
+  long four = EEPROM.read(address);
+  long three = EEPROM.read(address + 1);
+  long two = EEPROM.read(address + 2);
+  long one = EEPROM.read(address + 3);
+
+  //Return the recomposed long by using bitshift.
+  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
 }
