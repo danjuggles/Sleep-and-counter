@@ -11,9 +11,10 @@ const int countInterruptPin = 2;   //Input signal from sensor to wake up counter
 //Global variables
 int counterState = 0;       //current count button state
 int counterStatePrv = 0;    //previous count button state
-int sleepNumber;
 int sleepYN = 1;
-long storedValue;  
+long storedValue;
+unsigned long maxCount = 50000000;
+int updateAfter = 100;
 
 unsigned long lastDebounceTime = 0;       //Last time output was toggled - Count
 unsigned long debounceDelay = 1.25;     //Debounce time on the input button (10ms, scaled down due to slower clock speed)
@@ -28,6 +29,7 @@ void setup()
   noInterrupts();
 
   Serial.begin(38400);    //Use Baud rate at 4800 on PC (due to 1MHz clock speed)
+  //  (38400/8)=4800
 
   /* Setup the pin direction. */
   for (byte i = 0; i <= A5; i++)
@@ -56,8 +58,9 @@ void setup()
   MCUCR = bit (BODS) | bit (BODSE);  // turn on brown-out enable select
   MCUCR = bit (BODS);        // this must be done within 4 clock cycles of above
 
- //Read the stored EEPROM value
+  //Read the stored EEPROM value
   countNumber = EEPROMReadLong(0);
+  //countNumber = 49999980;
 
   Serial.println("Initialisation complete.");
 
@@ -69,20 +72,38 @@ void setup()
 /***************************************************/
 void loop()
 {
-  //digitalWrite(ledPin, HIGH);   //Turn onboard LED ON
+  /////////////////EEPROM update logic/////////////////////
+  long address = 0;   //Sets the EEPROM start address, must be in main loop
+  storedValue = EEPROMReadLong(0);
 
+  //EEPROMWriteLong(address, 0); //uncomment this line and program to reset EEPROM data.
+  //This must then be re-commented and then re-programmed to be funtional again
 
-    /////////////////EEPROM update logic/////////////////////
-    long address = 0;   //Sets the EEPROM start address, must be in main loop
-    storedValue = EEPROMReadLong(0);
-    if (countNumber >= (storedValue + 10)) 
-    {
-      EEPROMWriteLong(address, countNumber);
-      address += 4;
-      Serial.print("EEPROM: ");
-      Serial.println(storedValue);
-    }
-    
+  if (countNumber >= (storedValue + updateAfter))
+  {
+    EEPROMWriteLong(address, countNumber);
+    address += 4;
+    Serial.print("EEPROM: ");
+    Serial.println(storedValue + updateAfter);
+  }
+
+  /*
+  if ((countNumber >= (storedValue + updateAfter)) && (countNumber <= maxCount))
+  {
+    EEPROMWriteLong(address, countNumber);
+    address += 4;
+    Serial.print("EEPROM: ");
+    Serial.println(storedValue + updateAfter);
+  }
+  else if (countNumber > maxCount)
+  {
+    Serial.print("EEPROM: ");
+    Serial.println(storedValue);
+    delay(125);
+  }
+
+  */
+
   //////////COUNTER LOGIC//////////
 
   counterState = digitalRead(countInterruptPin);   //Read the status of the counter input
@@ -135,17 +156,14 @@ void loop()
     }
   }
 
-
 }
 
 /***************************************************/
 void sleepLoop()
 {
-  sleepNumber++;
   Serial.print("S");
-  //Serial.println(sleepNumber);
 
-  delay(50);
+  delay(5);   //scales to 40ms
 
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
   sleep_enable();
@@ -171,8 +189,9 @@ void sleepInterrupt(void)
   //Serial.println("Interrupt triggered");
 }
 
+/***************************************************/
 //This function will write a 4 byte (32bit) long to the eeprom at
-//the specified address to adress + 3.
+//the specified address to adress + 3. max 4 byte value is
 void EEPROMWriteLong(int address, long value)
 {
   //Decomposition from a long to 4 bytes by using bitshift.
