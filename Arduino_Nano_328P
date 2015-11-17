@@ -5,15 +5,12 @@
 
 //Pin Mapping
 const int countInterruptPin = 2;   //Input signal from sensor to wake up counter if in sleep mode (looking for LOW as internal pullup resistor is used)
-//const int shareInterruptPin = 3;  //Signal to send counter into 'share' mode
-//const int ledPin = 6;    //Debugging tool providing visual indicator as to when a pulse is detected
 
 //Global variables
 int counterState = 0;       //current count button state
 int counterStatePrv = 0;    //previous count button state
 int sleepYN = 1;
 long storedValue;
-unsigned long maxCount = 50000000;
 int updateAfter = 100;
 
 unsigned long lastDebounceTime = 0;       //Last time output was toggled - Count
