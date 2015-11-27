@@ -4,14 +4,14 @@
 
 
 //Pin Mapping
-const int countInterruptPin = 2;   //Input signal from sensor to wake up counter if in sleep mode (looking for LOW as internal pullup resistor is used)
+const int countInterruptPin = 3;   //Input signal from sensor to wake up counter if in sleep mode (looking for LOW as internal pullup resistor is used)
 
 //Global variables
 int counterState = 0;       //current count button state
 int counterStatePrv = 0;    //previous count button state
 int sleepYN = 1;
 long storedValue;
-int updateAfter = 100;
+int updateAfter = 500;
 
 unsigned long lastDebounceTime = 0;       //Last time output was toggled - Count
 unsigned long debounceDelay = 1.25;     //Debounce time on the input button (10ms, scaled down due to slower clock speed)
@@ -57,7 +57,7 @@ void setup()
 
   //Read the stored EEPROM value
   countNumber = EEPROMReadLong(0);
-  //countNumber = 49999980;
+  //countNumber = 0;
 
   Serial.println("Initialisation complete.");
 
@@ -71,6 +71,9 @@ void loop()
 {
   /////////////////EEPROM update logic/////////////////////
   long address = 0;   //Sets the EEPROM start address, must be in main loop
+    
+    //EEPROMWriteLong(address, 0);
+    
   storedValue = EEPROMReadLong(0);
 
   //EEPROMWriteLong(address, 0); //uncomment this line and program to reset EEPROM data.
@@ -80,8 +83,8 @@ void loop()
   {
     EEPROMWriteLong(address, countNumber);
     address += 4;
-    Serial.print("EEPROM: ");
-    Serial.println(storedValue + updateAfter);
+    Serial.print(storedValue + updateAfter);
+    Serial.println(":E");
   }
 
   /*
